@@ -80,7 +80,7 @@ def verify_and_fix_evidence(body: str, claim):
     try:
         if body[claim.evidence.char_start:claim.evidence.char_end] == quote:
             return True
-    except:
+    except (IndexError, TypeError):
         pass
 
     idx = body.find(quote)

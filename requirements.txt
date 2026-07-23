@@ -3,3 +3,4 @@ requests
 pydantic
 pytz
 neo4j
+python-dotenv

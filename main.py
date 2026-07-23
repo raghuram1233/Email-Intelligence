@@ -1,64 +1,95 @@
-import os
 import json
-from extraction import load_emails, extract_structured, hash_artifact
+import logging
+import os
+
+import neo4j.exceptions
+
+import config
+from deduper import deduplicate_claims
+from extraction import extract_structured, hash_artifact, load_emails
 from graph_builder import Neo4jGraph
 from normalizer import verify_and_fix_evidence
 
-CSV_PATH = "sample_5.csv"
-PROGRESS_FILE = "progress.json"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-graph = Neo4jGraph("neo4j://127.0.0.1:7687", "neo4j", "asdfghjkl")
-df = load_emails(CSV_PATH)
 
-if os.path.exists(PROGRESS_FILE):
-    with open(PROGRESS_FILE, "r") as f:
-        progress_data = json.load(f)
-        start_index = progress_data.get("last_index", 0)
-else:
-    start_index = 0
+def process_row(idx, row, graph):
+    result, cleaned_body, timestamp_utc, sender = extract_structured(row)
 
-print(f"Resuming from row index: {start_index}")
+    if not result:
+        logger.info("Row %d: no structured output, skipping.", idx)
+        return
 
-for idx in range(start_index, len(df)):
+    artifact_id = hash_artifact(cleaned_body)  # type: ignore
+    message_id = row.get("message-id", "unknown")
 
-    row = df.iloc[idx]
+    valid_claims = [
+        claim
+        for claim in result.claims
+        if verify_and_fix_evidence(cleaned_body, claim)  # type: ignore
+    ]
+
+    # Deduplicate claims before writing (#7)
+    valid_claims = deduplicate_claims(valid_claims)
+    result.claims = valid_claims
+
+    graph.insert_full(
+        result,
+        artifact_id,
+        row.get("subject", ""),
+        sender,
+        timestamp_utc,
+        message_id,
+    )
+
+    logger.info("Row %d processed — %d claims, %d entities.", idx, len(valid_claims), len(result.entities))
+
+
+def load_progress(path: str) -> int:
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f).get("last_index", 0)
+    return 0
+
+
+def save_progress(path: str, idx: int):
+    with open(path, "w") as f:
+        json.dump({"last_index": idx + 1}, f)
+
+
+def main():
+    graph = Neo4jGraph(config.NEO4J_URI, config.NEO4J_USER, config.NEO4J_PASSWORD)
+    df = load_emails(config.CSV_PATH)
+    start_index = load_progress(config.PROGRESS_FILE)
+
+    logger.info("Resuming from row index %d / %d total rows.", start_index, len(df))
 
     try:
-        result, cleaned_body, timestamp_utc ,Sender = extract_structured(row)
+        for idx in range(start_index, len(df)):
+            row = df.iloc[idx]
 
-        if not result:
-            with open(PROGRESS_FILE, "w") as f:
-                json.dump({"last_index": idx + 1}, f)
-            continue
+            try:
+                process_row(idx, row, graph)
+                save_progress(config.PROGRESS_FILE, idx)
 
-        artifact_id = hash_artifact(cleaned_body)  #type:ignore
-        message_id = row.get("message-id", "unknown")
+            except neo4j.exceptions.ServiceUnavailable as exc:
+                # Database is unreachable — stop safely so progress is not advanced
+                logger.error("Neo4j unavailable at row %d: %s — stopping.", idx, exc)
+                break
 
-        valid_claims = []
-        for claim in result.claims:
-            if verify_and_fix_evidence(cleaned_body, claim):        #type:ignore
-                valid_claims.append(claim)
+            except Exception as exc:
+                # Any other error: log, skip this row, continue with the next
+                logger.warning("Error at row %d: %s — skipping row.", idx, exc)
+                save_progress(config.PROGRESS_FILE, idx)
 
-        result.claims = valid_claims
+    finally:
+        graph.close()
+        logger.info("Processing complete.")
 
-        graph.insert_full(
-            result,
-            artifact_id,
-            row.get("subject", ""),
-            Sender,
-            timestamp_utc,
-            message_id
-        )
 
-        with open(PROGRESS_FILE, "w") as f:
-            json.dump({"last_index": idx + 1}, f)
-
-        print(f"Processed row {idx}")
-
-    except Exception as e:
-        print(f"Error at row {idx}: {e}")
-        print("Stopping safely. Resume will continue from this row.")
-        break
-
-graph.close()
-print("Processing complete.")
+if __name__ == "__main__":
+    main()

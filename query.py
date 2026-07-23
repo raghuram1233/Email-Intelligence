@@ -1,5 +1,6 @@
 import json
 from qa_pipeline import MemoryQA
+import config
 
 
 def print_results(result):
@@ -38,7 +39,7 @@ def print_results(result):
 
 def main():
 
-    qa = MemoryQA("bolt://localhost:7687", "neo4j", "asdfghjkl")
+    qa = MemoryQA(config.NEO4J_URI, config.NEO4J_USER, config.NEO4J_PASSWORD)
 
     try:
 

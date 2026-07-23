@@ -5,3 +5,6 @@ sample_emails.csv
 __pycache__
 .vscode
 Resources
+.env
+output.txt
+Submission.zip
