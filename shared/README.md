@@ -1,20 +1,19 @@
-# shared/
+# Shared Schema Contracts
 
-`openapi.json` is the FastAPI backend's OpenAPI 3.1 schema — the canonical, machine-readable
-contract for every `/entities`, `/claims`, `/artifacts`, `/graph`, `/timeline`, `/duplicates`,
-`/search`, `/qa`, and `/stats` endpoint (paths, params, response shapes).
+`openapi.json` is the OpenAPI 3.1 specification exported from the FastAPI backend. It serves as the canonical contract defining schemas, route parameters, and response shapes for all API endpoints (`/entities`, `/claims`, `/artifacts`, `/graph`, `/timeline`, `/duplicates`, `/search`, `/qa`, `/stats`).
 
-`frontend/lib/types.ts` and `frontend/lib/api.ts` are hand-written TypeScript against this same
-contract (Python and TypeScript can't share source directly, so there's no build-time link between
-them — keep them in sync manually, or regenerate frontend types from this file with a tool like
-`openapi-typescript` if the API grows).
+The TypeScript interfaces in `frontend/lib/types.ts` and client methods in `frontend/lib/api.ts` mirror these definitions.
 
-The live, always-up-to-date version is also served directly by the running backend:
+## Live API Documentation
 
-- Interactive docs: `http://localhost:8000/docs`
-- Raw schema: `http://localhost:8000/openapi.json`
+When the backend service is running, the interactive documentation and schema are served at:
 
-To regenerate this snapshot after changing the backend:
+- **Interactive Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Raw OpenAPI Schema**: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
+
+## Regenerating the Specification
+
+To update `shared/openapi.json` after making backend schema or router changes:
 
 ```bash
 cd backend
